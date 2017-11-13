@@ -30,8 +30,10 @@ type Queue interface {
 	// QueueAdd inserts the element to this queue. If element already exists in a queue, it should
 	// return nil.
 	QueueAdd(tx Transaction) error
-	// QueuePool receives and removes the head of this queue. Returns nil if no elements found.
-	QueuePool() (*Transaction, error)
+	// WithQueuedTransaction receives and removes the head of this queue and calls the callback function within
+	// a database transaction. Any error returned by the callback will cause the DB transaction to rollback.
+	// Returns true when queue contains elements otherwise false.
+	WithQueuedTransaction(func(*Transaction) error) (bool, error)
 }
 
 type SQSFiFo struct{}

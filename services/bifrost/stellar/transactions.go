@@ -99,6 +99,9 @@ func (ac *AccountConfigurator) buildTransaction(mutators ...build.TransactionMut
 	}
 	muts = append(muts, mutators...)
 	tx := build.Transaction(muts...)
+	if tx.Err != nil {
+		return "", tx.Err
+	}
 	txe := tx.Sign(ac.SignerSecretKey)
 	return txe.Base64()
 }
