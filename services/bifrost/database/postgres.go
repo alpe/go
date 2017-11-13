@@ -324,7 +324,7 @@ func (d *PostgresDatabase) QueueAdd(tx queue.Transaction) error {
 
 // QueuePool receives and removes the head of this queue. Returns nil if no elements found.
 // QueuePool implements queue.Queue interface.
-func (d *PostgresDatabase) QueuePool() (*queue.Transaction, error) {
+func (d *PostgresDatabase) WithQueuedTransaction(transactionHandler func(*queue.Transaction) error) (bool, error) {
 	row := transactionsQueueRow{}
 
 	session := d.session.Clone()
@@ -332,17 +332,18 @@ func (d *PostgresDatabase) QueuePool() (*queue.Transaction, error) {
 
 	err := session.Begin()
 	if err != nil {
-		return nil, errors.Wrap(err, "Error starting a new transaction")
+		return false, errors.Wrap(err, "Error starting a new transaction")
 	}
 	defer session.Rollback()
 
+	// transactions_queue table will be locked by `for update` to prevent concurrent consumption
 	err = transactionsQueueTable.Get(&row, map[string]interface{}{"pooled": false}).OrderBy("id ASC").Suffix("FOR UPDATE").Exec()
 	if err != nil {
 		switch errors.Cause(err) {
 		case sql.ErrNoRows:
-			return nil, nil
+			return false, nil
 		default:
-			return nil, errors.Wrap(err, "Error getting transaction from a queue")
+			return false, errors.Wrap(err, "failed to get transaction from the queue")
 		}
 	}
 
@@ -350,15 +351,13 @@ func (d *PostgresDatabase) QueuePool() (*queue.Transaction, error) {
 	where := map[string]interface{}{"transaction_id": row.TransactionID, "asset_code": row.AssetCode}
 	_, err = transactionsQueueTable.Update(nil, where).Set("pooled", true).Exec()
 	if err != nil {
-		return nil, errors.Wrap(err, "Error setting transaction as pooled in a queue")
+		return false, errors.Wrap(err, "failed to set transaction as pooled in a queue")
 	}
 
-	err = session.Commit()
-	if err != nil {
-		return nil, errors.Wrap(err, "Error commiting a transaction")
+	if err := transactionHandler(row.toQueueTransaction()); err != nil {
+		return false, errors.Wrap(err, "failed to process transaction")
 	}
-
-	return row.toQueueTransaction(), nil
+	return true, session.Commit()
 }
 
 // AddEvent adds a new server-sent event to the storage.

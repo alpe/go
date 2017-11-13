@@ -86,11 +86,12 @@ func (s *Server) Start() error {
 
 	signalInterrupt := make(chan os.Signal, 1)
 	signal.Notify(signalInterrupt, os.Interrupt)
-
-	go s.poolTransactionsQueue()
+	ctx, cancel := context.WithCancel(context.Background())
+	go s.poolTransactionsQueue(ctx)
 	go s.startHTTPServer()
 
 	<-signalInterrupt
+	cancel()
 	s.shutdown()
 
 	return nil
