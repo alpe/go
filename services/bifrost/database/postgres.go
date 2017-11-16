@@ -19,12 +19,15 @@ const (
 	bitcoinAddressIndexKey = "bitcoin_address_index"
 	bitcoinLastBlockKey    = "bitcoin_last_block"
 
-	addressAssociationTableName   = "address_association"
-	broadcastedEventTableName     = "broadcasted_event"
-	keyValueStoreTableName        = "key_value_store"
-	processedTransactionTableName = "processed_transaction"
-	transactionsQueueTableName    = "transactions_queue"
-	recoveryTransactionTableName  = "recovery_transaction"
+	addressAssociationTableName     = "address_association"
+	broadcastedEventTableName       = "broadcasted_event"
+	keyValueStoreTableName          = "key_value_store"
+	processedTransactionTableName   = "processed_transaction"
+	transactionsQueueTableName      = "transactions_queue"
+	recoveryTransactionTableName    = "recovery_transaction"
+	transactionSubmissionsTableName = "transaction_submissions"
+
+	maxProcessingFailureCount = 15
 )
 
 type keyValueStoreRow struct {
@@ -52,6 +55,7 @@ type transactionsQueueRow struct {
 	AssetCode        queue.AssetCode `db:"asset_code"`
 	Amount           string          `db:"amount"`
 	StellarPublicKey string          `db:"stellar_public_key"`
+	FailureCount     int             `db:"failure_count"`
 }
 
 type processedTransactionRow struct {
@@ -79,8 +83,8 @@ func isDuplicateError(err error) bool {
 	return strings.Contains(err.Error(), "duplicate key value violates unique constraint")
 }
 
-func (r *transactionsQueueRow) toQueueTransaction() *queue.Transaction {
-	return &queue.Transaction{
+func (r *transactionsQueueRow) toQueueTransaction() queue.Transaction {
+	return queue.Transaction{
 		TransactionID:    r.TransactionID,
 		AssetCode:        r.AssetCode,
 		Amount:           r.Amount,
@@ -306,58 +310,6 @@ func (d *PostgresDatabase) saveLastProcessedBlock(key string, block uint64) erro
 	}
 
 	return nil
-}
-
-// QueueAdd implements queue.Queue interface. If element already exists in a queue, it should
-// return nil.
-func (d *PostgresDatabase) QueueAdd(tx queue.Transaction) error {
-	transactionsQueueTable := d.getTable(transactionsQueueTableName, nil)
-	transactionQueue := fromQueueTransaction(tx)
-	_, err := transactionsQueueTable.Insert(transactionQueue).Exec()
-	if err != nil {
-		if isDuplicateError(err) {
-			return nil
-		}
-	}
-	return err
-}
-
-// QueuePool receives and removes the head of this queue. Returns nil if no elements found.
-// QueuePool implements queue.Queue interface.
-func (d *PostgresDatabase) WithQueuedTransaction(transactionHandler func(*queue.Transaction) error) (bool, error) {
-	row := transactionsQueueRow{}
-
-	session := d.session.Clone()
-	transactionsQueueTable := d.getTable(transactionsQueueTableName, session)
-
-	err := session.Begin()
-	if err != nil {
-		return false, errors.Wrap(err, "Error starting a new transaction")
-	}
-	defer session.Rollback()
-
-	// transactions_queue table will be locked by `for update` to prevent concurrent consumption
-	err = transactionsQueueTable.Get(&row, map[string]interface{}{"pooled": false}).OrderBy("id ASC").Suffix("FOR UPDATE").Exec()
-	if err != nil {
-		switch errors.Cause(err) {
-		case sql.ErrNoRows:
-			return false, nil
-		default:
-			return false, errors.Wrap(err, "failed to get transaction from the queue")
-		}
-	}
-
-	// TODO: something's wrong with db.Table.Update(). Setting the first argument does not work as expected.
-	where := map[string]interface{}{"transaction_id": row.TransactionID, "asset_code": row.AssetCode}
-	_, err = transactionsQueueTable.Update(nil, where).Set("pooled", true).Exec()
-	if err != nil {
-		return false, errors.Wrap(err, "failed to set transaction as pooled in a queue")
-	}
-
-	if err := transactionHandler(row.toQueueTransaction()); err != nil {
-		return false, errors.Wrap(err, "failed to process transaction")
-	}
-	return true, session.Commit()
 }
 
 // AddEvent adds a new server-sent event to the storage.
