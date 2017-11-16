@@ -14,11 +14,11 @@ func (m *MockQueue) QueueAdd(tx Transaction) error {
 	return a.Error(0)
 }
 
-func (m *MockQueue) WithQueuedTransaction(f func(*Transaction) error) (bool, error) {
+func (m *MockQueue) WithQueuedTransaction(f func(Transaction) error) (bool, error) {
 	a := m.Called()
 	if err := a.Error(1); err != nil {
 		return false, err
 	}
 
-	return true, f(a.Get(0).(*Transaction))
+	return true, f(a.Get(0).(Transaction))
 }

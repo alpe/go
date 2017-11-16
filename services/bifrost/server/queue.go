@@ -22,7 +22,7 @@ func (s *Server) poolTransactionsQueue(ctx context.Context) {
 		default:
 		}
 
-		exists, err := s.TransactionsQueue.WithQueuedTransaction(func(transaction *queue.Transaction) error {
+		exists, err := s.TransactionsQueue.WithQueuedTransaction(func(transaction queue.Transaction) error {
 			// blocking execution due to exclusive lock on transaction table
 			s.log.WithField("transaction", transaction).Info("Received transaction from transactions queue")
 			return s.StellarAccountConfigurator.ConfigureAccount(

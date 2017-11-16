@@ -15,7 +15,7 @@ import (
 
 func TestPollTransactionQueueShouldRetryOnErrors(t *testing.T) {
 	var counter uint64 = 0
-	stub := func(func(*queue.Transaction) error) (bool, error) {
+	stub := func(func(queue.Transaction) error) (bool, error) {
 		atomic.AddUint64(&counter, 1)
 		return false, errors.New("test, please ignore")
 	}
@@ -46,7 +46,7 @@ func TestPollTransactionQueueShouldRetryOnErrors(t *testing.T) {
 
 func TestPollTransactionQueueShouldNotSleepWhenQueueHasElements(t *testing.T) {
 	var counter uint64 = 0
-	stub := func(func(*queue.Transaction) error) (bool, error) {
+	stub := func(func(queue.Transaction) error) (bool, error) {
 		atomic.AddUint64(&counter, 1)
 		return true, nil
 	}
@@ -76,7 +76,7 @@ func TestPollTransactionQueueShouldNotSleepWhenQueueHasElements(t *testing.T) {
 }
 
 func TestPollTransactionQueueShouldExitWhenCtxClosed(t *testing.T) {
-	stub := func(func(*queue.Transaction) error) (bool, error) {
+	stub := func(func(queue.Transaction) error) (bool, error) {
 		t.Fatal("unexpected call to transaction handler")
 		return false, nil
 	}
@@ -95,11 +95,11 @@ func TestPollTransactionQueueShouldExitWhenCtxClosed(t *testing.T) {
 	assert.Error(t, ctx.Err())
 }
 
-type queuedTransactionStub func(func(*queue.Transaction) error) (bool, error)
+type queuedTransactionStub func(func(queue.Transaction) error) (bool, error)
 
 func (s queuedTransactionStub) QueueAdd(_ queue.Transaction) error {
 	return errors.New("not supported")
 }
-func (s queuedTransactionStub) WithQueuedTransaction(f func(*queue.Transaction) error) (bool, error) {
+func (s queuedTransactionStub) WithQueuedTransaction(f func(queue.Transaction) error) (bool, error) {
 	return s(f)
 }

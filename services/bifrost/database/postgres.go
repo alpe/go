@@ -324,7 +324,7 @@ func (d *PostgresDatabase) QueueAdd(tx queue.Transaction) error {
 
 // QueuePool receives and removes the head of this queue. Returns nil if no elements found.
 // QueuePool implements queue.Queue interface.
-func (d *PostgresDatabase) WithQueuedTransaction(transactionHandler func(*queue.Transaction) error) (bool, error) {
+func (d *PostgresDatabase) WithQueuedTransaction(transactionHandler func(queue.Transaction) error) (bool, error) {
 	row := transactionsQueueRow{}
 
 	session := d.session.Clone()
@@ -337,7 +337,7 @@ func (d *PostgresDatabase) WithQueuedTransaction(transactionHandler func(*queue.
 	defer session.Rollback()
 
 	// transactions_queue table will be locked by `for update` to prevent concurrent consumption
-	err = transactionsQueueTable.Get(&row, map[string]interface{}{"pooled": false}).OrderBy("id ASC").Suffix("FOR UPDATE").Exec()
+	err = transactionsQueueTable.Get(&row, map[string]interface{}{"pooled": false}).OrderBy("id ASC").Suffix("FOR UPDATE SKIP Locked").Exec()
 	if err != nil {
 		switch errors.Cause(err) {
 		case sql.ErrNoRows:
@@ -354,7 +354,7 @@ func (d *PostgresDatabase) WithQueuedTransaction(transactionHandler func(*queue.
 		return false, errors.Wrap(err, "failed to set transaction as pooled in a queue")
 	}
 
-	if err := transactionHandler(row.toQueueTransaction()); err != nil {
+	if err := transactionHandler(*row.toQueueTransaction()); err != nil {
 		return false, errors.Wrap(err, "failed to process transaction")
 	}
 	return true, session.Commit()
