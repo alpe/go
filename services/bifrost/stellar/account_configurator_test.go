@@ -24,6 +24,7 @@ func TestConfigureAccount(t *testing.T) {
 		NeedsAuthorize:    false,
 		NetworkPassphrase: network.TestNetworkPassphrase,
 		log:               common.CreateLogger("test account configurer"),
+		submissionArchive: &devNullArchiver{},
 	}
 
 	horizonMock.Mock.
@@ -38,9 +39,18 @@ func TestConfigureAccount(t *testing.T) {
 		Return(horizon.TransactionSuccess{}, nil)
 
 	// when
-	err := ac.ConfigureAccount(myReceiversKeyPair.Address(), "myAssetCode", "1")
+	err := ac.ConfigureAccount("myTxID", myReceiversKeyPair.Address(), "myAssetCode", "1")
 
 	// then
 	require.NoError(t, err)
 	horizonMock.Mock.AssertExpectations(t)
+}
+
+type devNullArchiver struct{}
+
+func (d *devNullArchiver) Find(txID string, st SubmissionType) (string, error) {
+	return "", nil
+}
+func (d *devNullArchiver) Store(txID string, st SubmissionType, xdr string) error {
+	return nil
 }

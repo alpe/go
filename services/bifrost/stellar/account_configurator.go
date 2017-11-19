@@ -66,7 +66,7 @@ func (ac *AccountConfigurator) logStats() {
 // ConfigureAccount configures a new account that participated in ICO.
 // * First it creates a new account.
 // * Once a trust line exists, it credits it with received number of ETH or BTC.
-func (ac *AccountConfigurator) ConfigureAccount(destination, assetCode, amount string) error {
+func (ac *AccountConfigurator) ConfigureAccount(transactionID, destination, assetCode, amount string) error {
 	localLog := ac.log.WithFields(log.F{
 		"destination": destination,
 		"assetCode":   assetCode,
@@ -91,10 +91,19 @@ func (ac *AccountConfigurator) ConfigureAccount(destination, assetCode, amount s
 
 	if !exists {
 		localLog.WithField("destination", destination).Info("Creating Stellar account")
-		if err := ac.createAccount(destination); err != nil {
-			return errors.Wrap(err, "failed to create Stellar account")
+		xdr, err := ac.submissionArchive.Find(transactionID, SubmissionTypeCreateAccount)
+		switch {
+		case err != nil:
+			return errors.Wrap(err, "failed to find persisted submission")
+		case err == nil && xdr != "":
+			if err := ac.submitXDR(xdr); err != nil {
+				return err
+			}
+		default:
+			if err := ac.createAccount(transactionID, destination); err != nil {
+				return errors.Wrap(err, "failed to create Stellar account")
+			}
 		}
-
 		if ac.OnAccountCreated != nil {
 			ac.OnAccountCreated(destination)
 		}
@@ -127,8 +136,18 @@ func (ac *AccountConfigurator) ConfigureAccount(destination, assetCode, amount s
 	}
 
 	localLog.Info("Sending token")
-	if err := ac.sendToken(destination, assetCode, amount); err != nil {
-		return errors.Wrap(err, "sending asset to account failed")
+	xdr, err := ac.submissionArchive.Find(transactionID, SubmissionTypeSendTokens)
+	switch {
+	case err != nil:
+		return errors.Wrap(err, "failed to find persisted submission")
+	case err == nil && xdr != "":
+		if err := ac.submitXDR(xdr); err != nil {
+			return err
+		}
+	default:
+		if err := ac.sendToken(transactionID, destination, assetCode, amount); err != nil {
+			return errors.Wrap(err, "sending asset to account failed")
+		}
 	}
 
 	if ac.OnAccountCredited != nil {

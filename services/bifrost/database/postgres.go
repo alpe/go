@@ -6,6 +6,9 @@ import (
 	"strings"
 	"time"
 
+	"crypto/rand"
+	"encoding/hex"
+
 	"github.com/stellar/go/services/bifrost/queue"
 	"github.com/stellar/go/services/bifrost/sse"
 	"github.com/stellar/go/support/db"
@@ -25,6 +28,8 @@ const (
 	processedTransactionTableName = "processed_transaction"
 	transactionsQueueTableName    = "transactions_queue"
 	recoveryTransactionTableName  = "recovery_transaction"
+
+	defaultTransactionLockTTL = 2 * time.Minute
 )
 
 type keyValueStoreRow struct {
@@ -79,8 +84,8 @@ func isDuplicateError(err error) bool {
 	return strings.Contains(err.Error(), "duplicate key value violates unique constraint")
 }
 
-func (r *transactionsQueueRow) toQueueTransaction() *queue.Transaction {
-	return &queue.Transaction{
+func (r *transactionsQueueRow) toQueueTransaction() queue.Transaction {
+	return queue.Transaction{
 		TransactionID:    r.TransactionID,
 		AssetCode:        r.AssetCode,
 		Amount:           r.Amount,
@@ -325,39 +330,93 @@ func (d *PostgresDatabase) QueueAdd(tx queue.Transaction) error {
 // QueuePool receives and removes the head of this queue. Returns nil if no elements found.
 // QueuePool implements queue.Queue interface.
 func (d *PostgresDatabase) WithQueuedTransaction(transactionHandler func(queue.Transaction) error) (bool, error) {
-	row := transactionsQueueRow{}
+	var row *transactionsQueueRow
+	var sessionToken string
+	err := withTx(d.session, func(s *db.Session) error {
+		transactionsQueueTable := d.getTable(transactionsQueueTableName, s)
 
-	session := d.session.Clone()
-	transactionsQueueTable := d.getTable(transactionsQueueTableName, session)
-
-	err := session.Begin()
-	if err != nil {
-		return false, errors.Wrap(err, "Error starting a new transaction")
-	}
-	defer session.Rollback()
-
-	// transactions_queue table will be locked by `for update` to prevent concurrent consumption
-	err = transactionsQueueTable.Get(&row, map[string]interface{}{"pooled": false}).OrderBy("id ASC").Suffix("FOR UPDATE SKIP Locked").Exec()
-	if err != nil {
-		switch errors.Cause(err) {
-		case sql.ErrNoRows:
-			return false, nil
-		default:
-			return false, errors.Wrap(err, "failed to get transaction from the queue")
+		// transactions_queue table will be locked by `for update` to prevent concurrent consumption
+		err := transactionsQueueTable.Get(row, map[string]interface{}{"pooled": false}).Where("transactions_queue is nil or transactions_queue < ?", time.Now()).OrderBy("id ASC").Suffix("FOR UPDATE SKIP Locked").Exec()
+		if err != nil {
+			switch errors.Cause(err) {
+			case sql.ErrNoRows:
+				return nil
+			default:
+				return errors.Wrap(err, "failed to get transaction from the queue")
+			}
 		}
-	}
+		// set lock
+		sessionToken, err = newToken()
+		if err != nil {
+			return errors.Wrap(err, "failed to create session token")
+		}
 
-	// TODO: something's wrong with db.Table.Update(). Setting the first argument does not work as expected.
-	where := map[string]interface{}{"transaction_id": row.TransactionID, "asset_code": row.AssetCode}
-	_, err = transactionsQueueTable.Update(nil, where).Set("pooled", true).Exec()
-	if err != nil {
-		return false, errors.Wrap(err, "failed to set transaction as pooled in a queue")
+		where := map[string]interface{}{"transaction_id": row.TransactionID, "asset_code": row.AssetCode}
+		_, err = transactionsQueueTable.Update(nil, where).
+			Set("locked_until", time.Now().Add(defaultTransactionLockTTL)).
+			Set("locked_token", sessionToken).
+			Exec()
+		return err
+	})
+	switch {
+	case err != nil:
+		return false, errors.Wrap(err, "failed to find and lock transaction")
+	case row == nil:
+		return false, nil
 	}
+	// process callback without surrounding transaction
+	transaction := row.toQueueTransaction()
+	defer d.releaseTransactionLock(transaction.TransactionID, sessionToken)
 
-	if err := transactionHandler(*row.toQueueTransaction()); err != nil {
+	if err := transactionHandler(transaction); err != nil {
 		return false, errors.Wrap(err, "failed to process transaction")
 	}
-	return true, session.Commit()
+
+	// update pooled status
+	err = withTx(d.session, func(s *db.Session) error {
+		where := map[string]interface{}{"transaction_id": row.TransactionID, "locked_token": sessionToken}
+		transactionsQueueTable := d.getTable(transactionsQueueTableName, s)
+		_, err := transactionsQueueTable.Update(nil, where).Set("pooled", true).Exec()
+		return err
+	})
+	if err != nil {
+		return false, errors.Wrap(err, "failed to set pooled status for transaction")
+	}
+	return row != nil, nil
+}
+
+func (d *PostgresDatabase) releaseTransactionLock(transactionID string, sessionToken string) error {
+	return withTx(d.session, func(s *db.Session) error {
+		transactionsQueueTable := d.getTable(transactionsQueueTableName, s)
+		where := map[string]interface{}{"transaction_id": transactionID, "locked_token": sessionToken}
+		_, err := transactionsQueueTable.Update(nil, where).
+			Set("locked_until", nil).
+			Set("locked_token", nil).
+			Exec()
+		return err
+	})
+}
+
+func withTx(session *db.Session, f func(s *db.Session) error) error {
+	newSession := session.Clone()
+	if err := newSession.Begin(); err != nil {
+		return errors.Wrap(err, "failed to start db transaction")
+	}
+	defer newSession.Rollback()
+
+	if err := f(newSession); err != nil {
+		return err
+	}
+	return newSession.Commit()
+}
+
+func newToken() (string, error) {
+	raw := make([]byte, 32)
+	_, err := rand.Read(raw)
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(raw), nil
 }
 
 // AddEvent adds a new server-sent event to the storage.

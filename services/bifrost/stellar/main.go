@@ -7,6 +7,18 @@ import (
 	"github.com/stellar/go/support/log"
 )
 
+type SubmissionType string
+
+var (
+	SubmissionTypeCreateAccount SubmissionType = "submission_create_account"
+	SubmissionTypeSendTokens    SubmissionType = "submission_send_tokens"
+)
+
+type SubmissionArchive interface {
+	Find(txID string, st SubmissionType) (string, error)
+	Store(txID string, st SubmissionType, xdr string) error
+}
+
 // AccountConfigurator is responsible for configuring new Stellar accounts that
 // participate in ICO.
 type AccountConfigurator struct {
@@ -18,6 +30,7 @@ type AccountConfigurator struct {
 	TokenAssetCode    string
 	OnAccountCreated  func(destination string)
 	OnAccountCredited func(destination string, assetCode string, amount string)
+	submissionArchive SubmissionArchive
 
 	signerPublicKey      string
 	sequence             uint64

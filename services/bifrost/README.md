@@ -43,6 +43,29 @@
 * Make sure you configured minimum accepted value for Bitcoin and Ethereum transactions.
 * Make sure you start from a fresh DB in production. If Bifrost was running, you stopped it and then started again all the block mined during that that will be processed what can take a lot of time.
 
+
+
+
+## Integration tests
+
+* Start [Postgresql](https://www.postgresql.org/) Database server.
+
+For example via docker
+```bash
+docker run -it --rm  --name stellar-postgres -e POSTGRES_USER=root -e POSTGRES_PASSWORD=mysecretpassword -p5432:5432 circleci/postgres:9-alpine
+```
+
+* Run integration tests
+Pass the DB url via parameter
+```bash
+ go test -v ./... -tags=integration -db-url="postgres://root:mysecretpassword@127.0.0.1:5432/circle_test?sslmode=disable"
+```
+
+* Manually access Docker DB
+```bash
+docker exec -it stellar-postgres  /usr/local/bin/psql -d circle_test
+```
+
 ## Stress-testing
 
 //

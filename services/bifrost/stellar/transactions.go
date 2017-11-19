@@ -9,8 +9,8 @@ import (
 	"github.com/stellar/go/support/log"
 )
 
-func (ac *AccountConfigurator) createAccount(destination string) error {
-	err := ac.submitTransaction(
+func (ac *AccountConfigurator) createAccount(transactionID, destination string) error {
+	xdr, err := ac.buildTransaction(
 		build.CreateAccount(
 			build.SourceAccount{ac.IssuerPublicKey},
 			build.Destination{destination},
@@ -18,10 +18,12 @@ func (ac *AccountConfigurator) createAccount(destination string) error {
 		),
 	)
 	if err != nil {
-		return errors.Wrap(err, "Error submitting transaction")
+		return errors.Wrap(err, "failed to build transaction")
 	}
-
-	return nil
+	if err := ac.submissionArchive.Store(transactionID, SubmissionTypeCreateAccount, xdr); err != nil {
+		return errors.Wrap(err, "failed to archive xdr")
+	}
+	return ac.submitXDR(xdr)
 }
 
 func (ac *AccountConfigurator) allowTrust(trustor, assetCode, tokenAssetCode string) error {
@@ -48,8 +50,8 @@ func (ac *AccountConfigurator) allowTrust(trustor, assetCode, tokenAssetCode str
 	return nil
 }
 
-func (ac *AccountConfigurator) sendToken(destination, assetCode, amount string) error {
-	err := ac.submitTransaction(
+func (ac *AccountConfigurator) sendToken(transactionID, destination, assetCode, amount string) error {
+	xdr, err := ac.buildTransaction(
 		build.Payment(
 			build.SourceAccount{ac.IssuerPublicKey},
 			build.Destination{destination},
@@ -61,10 +63,12 @@ func (ac *AccountConfigurator) sendToken(destination, assetCode, amount string) 
 		),
 	)
 	if err != nil {
-		return errors.Wrap(err, "Error submitting transaction")
+		return errors.Wrap(err, "failed to build transaction")
 	}
-
-	return nil
+	if err := ac.submissionArchive.Store(transactionID, SubmissionTypeSendTokens, xdr); err != nil {
+		return errors.Wrap(err, "failed to archive xdr")
+	}
+	return ac.submitXDR(xdr)
 }
 
 func (ac *AccountConfigurator) submitTransaction(mutators ...build.TransactionMutator) error {
@@ -72,18 +76,19 @@ func (ac *AccountConfigurator) submitTransaction(mutators ...build.TransactionMu
 	if err != nil {
 		return errors.Wrap(err, "Error building transaction")
 	}
+	return ac.submitXDR(tx)
+}
 
-	localLog := log.WithField("tx", tx)
+func (ac *AccountConfigurator) submitXDR(xdr string) error {
+	localLog := log.WithField("tx", xdr)
 	localLog.Info("Submitting transaction")
 
-	_, err = ac.Horizon.SubmitTransaction(tx)
-	if err != nil {
+	if _, err := ac.Horizon.SubmitTransaction(xdr); err != nil {
 		fields := log.F{"err": err}
 		if err, ok := err.(*horizon.Error); ok {
 			fields["result"] = string(err.Problem.Extras["result_xdr"])
 			ac.updateSequence()
 		}
-		localLog.WithFields(fields).Error("Error submitting transaction")
 		return errors.Wrap(err, "Error submitting transaction")
 	}
 

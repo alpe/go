@@ -26,6 +26,7 @@ func (s *Server) poolTransactionsQueue(ctx context.Context) {
 			// blocking execution due to exclusive lock on transaction table
 			s.log.WithField("transaction", transaction).Info("Received transaction from transactions queue")
 			return s.StellarAccountConfigurator.ConfigureAccount(
+				transaction.TransactionID,
 				transaction.StellarPublicKey,
 				string(transaction.AssetCode),
 				transaction.Amount,
