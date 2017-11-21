@@ -117,6 +117,7 @@ func (ac *AccountConfigurator) ConfigureAccount(ctx context.Context, transaction
 		// Wait for trust line to be created...
 		retryDelayer := time.NewTimer(defaultAccountPullDelay)
 		defer retryDelayer.Stop()
+		exit := ctx.Done()
 		for i := 0; i < 10; i++ {
 			destAccount, destAccountExists, err = ac.getAccount(ctx, destination)
 			if err != nil {
@@ -128,7 +129,7 @@ func (ac *AccountConfigurator) ConfigureAccount(ctx context.Context, transaction
 			}
 			retryDelayer.Reset(defaultAccountPullDelay)
 			select {
-			case <-ctx.Done():
+			case <-exit:
 				return ctx.Err()
 			case <-retryDelayer.C:
 				continue

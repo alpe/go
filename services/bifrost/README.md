@@ -58,7 +58,7 @@ docker run -it --rm  --name stellar-postgres -e POSTGRES_USER=root -e POSTGRES_P
 * Run integration tests
 Pass the DB url via parameter
 ```bash
- go test -v ./... -tags=integration -db-url="postgres://root:mysecretpassword@127.0.0.1:5432/circle_test?sslmode=disable"
+ go test -v ./database -tags=integration -db-url="postgres://root:mysecretpassword@127.0.0.1:5432/circle_test?sslmode=disable"
 ```
 
 * Manually access Docker DB

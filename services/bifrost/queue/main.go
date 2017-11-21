@@ -33,8 +33,11 @@ type Queue interface {
 	// WithQueuedTransaction receives and removes the head of this queue and calls the callback function.
 	// Any error returned by the callback should cause the the implementation to revert/ rollback
 	// to previous state.
-	// Returns true when queue contains elements otherwise false.
-	WithQueuedTransaction(func(Transaction) error) (bool, error)
+	// Returns any error
+	WithQueuedTransaction(func(Transaction) error) error
+
+	// IsEmpty returns true when queue contains any element.
+	IsEmpty() (bool, error)
 }
 
 type SQSFiFo struct{}

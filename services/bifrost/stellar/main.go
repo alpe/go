@@ -9,7 +9,7 @@ import (
 
 type SubmissionType string
 
-var (
+const (
 	SubmissionTypeCreateAccount SubmissionType = "submission_create_account"
 	SubmissionTypeSendTokens    SubmissionType = "submission_send_tokens"
 )
