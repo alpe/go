@@ -23,7 +23,13 @@ func (ac *AccountConfigurator) createAccount(transactionID, destination string) 
 	if err := ac.submissionArchive.Store(transactionID, SubmissionTypeCreateAccount, xdr); err != nil {
 		return errors.Wrap(err, "failed to archive xdr")
 	}
-	return ac.submitXDR(xdr)
+	if err = ac.submitXDR(xdr); err != nil {
+		if _, ok := err.(*horizon.Error); ok {
+			_ = ac.submissionArchive.Delete(transactionID, SubmissionTypeCreateAccount)
+		}
+		return err
+	}
+	return nil
 }
 
 func (ac *AccountConfigurator) allowTrust(trustor, assetCode, tokenAssetCode string) error {
@@ -68,7 +74,13 @@ func (ac *AccountConfigurator) sendToken(transactionID, destination, assetCode, 
 	if err := ac.submissionArchive.Store(transactionID, SubmissionTypeSendTokens, xdr); err != nil {
 		return errors.Wrap(err, "failed to archive xdr")
 	}
-	return ac.submitXDR(xdr)
+	if err := ac.submitXDR(xdr); err != nil {
+		if _, ok := err.(*horizon.Error); ok {
+			_ = ac.submissionArchive.Delete(transactionID, SubmissionTypeSendTokens)
+		}
+		return err
+	}
+	return nil
 }
 
 func (ac *AccountConfigurator) submitTransaction(mutators ...build.TransactionMutator) error {

@@ -9,6 +9,8 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 
+	"context"
+
 	"github.com/stellar/go/services/bifrost/queue"
 	"github.com/stellar/go/services/bifrost/sse"
 	"github.com/stellar/go/support/db"
@@ -30,6 +32,7 @@ const (
 	recoveryTransactionTableName  = "recovery_transaction"
 
 	defaultTransactionLockTTL = 2 * time.Minute
+	maxProcessingFailureCount = 15
 )
 
 type keyValueStoreRow struct {
@@ -57,6 +60,7 @@ type transactionsQueueRow struct {
 	AssetCode        queue.AssetCode `db:"asset_code"`
 	Amount           string          `db:"amount"`
 	StellarPublicKey string          `db:"stellar_public_key"`
+	FailureCount     int             `db:"failure_count"`
 }
 
 type processedTransactionRow struct {
@@ -335,8 +339,9 @@ func (d *PostgresDatabase) WithQueuedTransaction(transactionHandler func(queue.T
 	err := withTx(d.session, func(s *db.Session) error {
 		transactionsQueueTable := d.getTable(transactionsQueueTableName, s)
 
-		// transactions_queue table will be locked by `for update` to prevent concurrent consumption
-		err := transactionsQueueTable.Get(row, map[string]interface{}{"pooled": false}).Where("transactions_queue is nil or transactions_queue < ?", time.Now()).OrderBy("id ASC").Suffix("FOR UPDATE SKIP Locked").Exec()
+		// transactions_queue row will be locked by `FOR UPDATE SKIP Locked` to prevent concurrent consumption
+		err := transactionsQueueTable.Get(row, map[string]interface{}{"pooled": false}).
+			Where("(locked_until is nil or locked_until < ?) AND failure_count < ?", time.Now(), maxProcessingFailureCount).OrderBy("failure_count ASC, id ASC").Suffix("FOR UPDATE SKIP Locked").Exec()
 		if err != nil {
 			switch errors.Cause(err) {
 			case sql.ErrNoRows:
@@ -345,7 +350,7 @@ func (d *PostgresDatabase) WithQueuedTransaction(transactionHandler func(queue.T
 				return errors.Wrap(err, "failed to get transaction from the queue")
 			}
 		}
-		// set lock
+		// set processing lock
 		sessionToken, err = newToken()
 		if err != nil {
 			return errors.Wrap(err, "failed to create session token")
@@ -369,6 +374,15 @@ func (d *PostgresDatabase) WithQueuedTransaction(transactionHandler func(queue.T
 	defer d.releaseTransactionLock(transaction.TransactionID, sessionToken)
 
 	if err := transactionHandler(transaction); err != nil {
+		if err != context.DeadlineExceeded {
+			// increase failure counter
+			_ = withTx(d.session, func(s *db.Session) error {
+				where := map[string]interface{}{"transaction_id": row.TransactionID, "locked_token": sessionToken}
+				transactionsQueueTable := d.getTable(transactionsQueueTableName, s)
+				_, err := transactionsQueueTable.Update(nil, where).Set("failure_count", row.FailureCount+1).Exec()
+				return err
+			})
+		}
 		return false, errors.Wrap(err, "failed to process transaction")
 	}
 

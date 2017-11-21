@@ -8,12 +8,13 @@ import (
 )
 
 var defaultQueueRetryDelay = time.Second
+var maxProxessingTime = 2 * time.Minute
 
 // poolTransactionsQueue pools transactions queue which contains only processed and
 // validated transactions and sends it to StellarAccountConfigurator for account configuration.
-func (s *Server) poolTransactionsQueue(ctx context.Context) {
+func (s *Server) poolTransactionsQueue(parentCtx context.Context) {
 	s.log.Info("Started pooling transactions queue")
-	exit := ctx.Done()
+	exit := parentCtx.Done()
 
 	for {
 		select {
@@ -23,9 +24,12 @@ func (s *Server) poolTransactionsQueue(ctx context.Context) {
 		}
 
 		exists, err := s.TransactionsQueue.WithQueuedTransaction(func(transaction queue.Transaction) error {
+			ctx, done := context.WithTimeout(parentCtx, maxProxessingTime)
+			defer done()
 			// blocking execution due to exclusive lock on transaction table
 			s.log.WithField("transaction", transaction).Info("Received transaction from transactions queue")
 			return s.StellarAccountConfigurator.ConfigureAccount(
+				ctx,
 				transaction.TransactionID,
 				transaction.StellarPublicKey,
 				string(transaction.AssetCode),

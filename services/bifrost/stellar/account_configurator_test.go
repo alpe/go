@@ -1,6 +1,7 @@
 package stellar
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stellar/go/clients/horizon"
@@ -39,7 +40,7 @@ func TestConfigureAccount(t *testing.T) {
 		Return(horizon.TransactionSuccess{}, nil)
 
 	// when
-	err := ac.ConfigureAccount("myTxID", myReceiversKeyPair.Address(), "myAssetCode", "1")
+	err := ac.ConfigureAccount(context.Background(), "myTxID", myReceiversKeyPair.Address(), "myAssetCode", "1")
 
 	// then
 	require.NoError(t, err)
@@ -52,5 +53,8 @@ func (d *devNullArchiver) Find(txID string, st SubmissionType) (string, error) {
 	return "", nil
 }
 func (d *devNullArchiver) Store(txID string, st SubmissionType, xdr string) error {
+	return nil
+}
+func (d *devNullArchiver) Delete(txID string, st SubmissionType) error {
 	return nil
 }

@@ -1,6 +1,7 @@
 package stellar
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -11,8 +12,11 @@ import (
 	"github.com/stellar/go/support/log"
 )
 
-// NewAccountXLMBalance is amount of lumens sent to new accounts
-const NewAccountXLMBalance = "41"
+const (
+	// NewAccountXLMBalance is amount of lumens sent to new accounts
+	NewAccountXLMBalance    = "41"
+	defaultAccountPullDelay = 2 * time.Second
+)
 
 func (ac *AccountConfigurator) Start() error {
 	ac.log = common.CreateLogger("StellarAccountConfigurator")
@@ -66,7 +70,7 @@ func (ac *AccountConfigurator) logStats() {
 // ConfigureAccount configures a new account that participated in ICO.
 // * First it creates a new account.
 // * Once a trust line exists, it credits it with received number of ETH or BTC.
-func (ac *AccountConfigurator) ConfigureAccount(transactionID, destination, assetCode, amount string) error {
+func (ac *AccountConfigurator) ConfigureAccount(ctx context.Context, transactionID, destination, assetCode, amount string) error {
 	localLog := ac.log.WithFields(log.F{
 		"destination": destination,
 		"assetCode":   assetCode,
@@ -84,12 +88,12 @@ func (ac *AccountConfigurator) ConfigureAccount(transactionID, destination, asse
 		ac.processingCountMutex.Unlock()
 	}()
 
-	destAccount, exists, err := ac.getAccount(destination)
+	destAccount, destAccountExists, err := ac.getAccount(ctx, destination)
 	if err != nil {
 		return errors.Wrap(err, "failed to load account from Horizon")
 	}
 
-	if !exists {
+	if !destAccountExists {
 		localLog.WithField("destination", destination).Info("Creating Stellar account")
 		xdr, err := ac.submissionArchive.Find(transactionID, SubmissionTypeCreateAccount)
 		switch {
@@ -108,23 +112,32 @@ func (ac *AccountConfigurator) ConfigureAccount(transactionID, destination, asse
 			ac.OnAccountCreated(destination)
 		}
 	}
-
-	if !ac.trustlineExists(destAccount, assetCode) {
+	trustLineExists := ac.trustlineExists(destAccount, assetCode)
+	if !trustLineExists {
 		// Wait for trust line to be created...
+		retryDelayer := time.NewTimer(defaultAccountPullDelay)
+		defer retryDelayer.Stop()
 		for i := 0; i < 10; i++ {
-			destAccount, err = ac.Horizon.LoadAccount(destination)
+			destAccount, destAccountExists, err = ac.getAccount(ctx, destination)
 			if err != nil {
 				return errors.Wrap(err, "failed to load account to check trust line")
 			}
-
-			if ac.trustlineExists(destAccount, assetCode) {
+			if destAccountExists && ac.trustlineExists(destAccount, assetCode) {
+				trustLineExists = true
 				break
 			}
-
-			time.Sleep(2 * time.Second)
+			retryDelayer.Reset(defaultAccountPullDelay)
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-retryDelayer.C:
+				continue
+			}
 		}
 	}
-
+	if !trustLineExists {
+		return errors.New("failed to find trust line set")
+	}
 	localLog.Info("Trust line found")
 
 	// When trust line found check if needs to authorize, then send token
@@ -140,6 +153,8 @@ func (ac *AccountConfigurator) ConfigureAccount(transactionID, destination, asse
 	switch {
 	case err != nil:
 		return errors.Wrap(err, "failed to find persisted submission")
+	case ctx.Err() != nil:
+		return ctx.Err()
 	case err == nil && xdr != "":
 		if err := ac.submitXDR(xdr); err != nil {
 			return err
@@ -158,17 +173,30 @@ func (ac *AccountConfigurator) ConfigureAccount(transactionID, destination, asse
 	return nil
 }
 
-func (ac *AccountConfigurator) getAccount(account string) (horizon.Account, bool, error) {
+func (ac *AccountConfigurator) getAccount(ctx context.Context, account string) (horizon.Account, bool, error) {
 	var hAccount horizon.Account
-	hAccount, err := ac.Horizon.LoadAccount(account)
-	if err != nil {
+	if err := ctx.Err(); err != nil {
+		return hAccount, false, err
+	}
+	result := make(chan error)
+	go func() {
+		defer close(result)
+		var err error
+		hAccount, err = ac.Horizon.LoadAccount(account)
+		result <- err
+	}()
+	select {
+	case err := <-result:
+		if err == nil {
+			return hAccount, true, nil
+		}
 		if err, ok := err.(*horizon.Error); ok && err.Response.StatusCode == http.StatusNotFound {
 			return hAccount, false, nil
 		}
 		return hAccount, false, err
+	case <-ctx.Done():
+		return hAccount, false, ctx.Err()
 	}
-
-	return hAccount, true, nil
 }
 
 func (ac *AccountConfigurator) trustlineExists(account horizon.Account, assetCode string) bool {

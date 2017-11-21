@@ -17,6 +17,7 @@ var (
 type SubmissionArchive interface {
 	Find(txID string, st SubmissionType) (string, error)
 	Store(txID string, st SubmissionType, xdr string) error
+	Delete(txID string, st SubmissionType) error
 }
 
 // AccountConfigurator is responsible for configuring new Stellar accounts that
