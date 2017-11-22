@@ -50,7 +50,7 @@ func (ac *AccountConfigurator) allowTrust(trustor, assetCode, tokenAssetCode str
 	return nil
 }
 
-func (ac *AccountConfigurator) sendToken(transactionID, destination, assetCode, amount string) error {
+func (ac *AccountConfigurator) sendToken(transactionID, assetCode, destination, amount string) error {
 	xdr, err := ac.buildTransaction(
 		build.Payment(
 			build.SourceAccount{ac.IssuerPublicKey},

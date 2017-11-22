@@ -27,7 +27,6 @@ const (
 	recoveryTransactionTableName    = "recovery_transaction"
 	transactionSubmissionsTableName = "transaction_submissions"
 
-	defaultTransactionLockTTL = 2 * time.Minute
 	maxProcessingFailureCount = 15
 )
 

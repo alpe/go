@@ -4,13 +4,13 @@ import (
 	"context"
 	"time"
 
+	"github.com/stellar/go/services/bifrost/database"
 	"github.com/stellar/go/services/bifrost/queue"
 )
 
-var defaultQueueRetryDelay = time.Second
-
-const (
-	maxProcessingTime = 2 * time.Minute
+var (
+	processingTimeout      = database.DefaultTransactionLockTTL - 5*time.Second
+	defaultQueueRetryDelay = time.Second
 )
 
 // poolTransactionsQueue pools transactions queue which contains only processed and
@@ -23,7 +23,7 @@ func (s *Server) poolTransactionsQueue(ctx context.Context) {
 	defer retryDelayer.Stop()
 	for ctx.Err() == nil {
 		if empty, err := s.TransactionsQueue.IsEmpty(); err != nil || empty {
-			retryDelayer.Reset(maxProcessingTime)
+			retryDelayer.Reset(defaultQueueRetryDelay)
 			select {
 			case <-exit:
 				break
@@ -38,7 +38,7 @@ func (s *Server) poolTransactionsQueue(ctx context.Context) {
 
 func (s *Server) processNextQueuedTransaction(parentCtx context.Context) {
 	err := s.TransactionsQueue.WithQueuedTransaction(func(transaction queue.Transaction) error {
-		ctx, done := context.WithTimeout(parentCtx, maxProcessingTime)
+		ctx, done := context.WithTimeout(parentCtx, processingTimeout)
 		defer done()
 		// blocking execution due to exclusive lock on transaction table
 		s.log.WithField("transaction", transaction).Info("Received transaction from transactions queue")
