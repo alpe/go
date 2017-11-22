@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -15,9 +16,9 @@ import (
 
 func TestPollTransactionQueueShouldRetryOnErrors(t *testing.T) {
 	var counter uint64 = 0
-	stub := func(func(queue.Transaction) error) (bool, error) {
+	stub := func(func(queue.Transaction) error) error {
 		atomic.AddUint64(&counter, 1)
-		return false, errors.New("test, please ignore")
+		return errors.New("test, please ignore")
 	}
 	server := Server{
 		TransactionsQueue:          queuedTransactionStub(stub),
@@ -46,9 +47,9 @@ func TestPollTransactionQueueShouldRetryOnErrors(t *testing.T) {
 
 func TestPollTransactionQueueShouldNotSleepWhenQueueHasElements(t *testing.T) {
 	var counter uint64 = 0
-	stub := func(func(queue.Transaction) error) (bool, error) {
+	stub := func(func(queue.Transaction) error) error {
 		atomic.AddUint64(&counter, 1)
-		return true, nil
+		return nil
 	}
 	server := Server{
 		TransactionsQueue:          queuedTransactionStub(stub),
@@ -76,9 +77,9 @@ func TestPollTransactionQueueShouldNotSleepWhenQueueHasElements(t *testing.T) {
 }
 
 func TestPollTransactionQueueShouldExitWhenCtxClosed(t *testing.T) {
-	stub := func(func(queue.Transaction) error) (bool, error) {
+	stub := func(func(queue.Transaction) error) error {
 		t.Fatal("unexpected call to transaction handler")
-		return false, nil
+		return nil
 	}
 	server := Server{
 		TransactionsQueue:          queuedTransactionStub(stub),
@@ -95,11 +96,50 @@ func TestPollTransactionQueueShouldExitWhenCtxClosed(t *testing.T) {
 	assert.Error(t, ctx.Err())
 }
 
-type queuedTransactionStub func(func(queue.Transaction) error) (bool, error)
+func TestPollTransactionQueueShouldNotBlockWhileProcessing(t *testing.T) {
+	var wg sync.WaitGroup
+	wg.Add(1)
+	var counter uint64 = 0
+	stub := func(func(queue.Transaction) error) error {
+		atomic.AddUint64(&counter, 1)
+		wg.Wait()
+		return nil
+	}
+	server := Server{
+		TransactionsQueue:          queuedTransactionStub(stub),
+		StellarAccountConfigurator: &stellar.AccountConfigurator{},
+		log: common.CreateLogger("test server"),
+	}
+	defaultQueueRetryDelay = time.Millisecond
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	// when
+	go server.poolTransactionsQueue(ctx)
+
+	// then test should not timeout
+	for {
+		select {
+		case <-ctx.Done():
+			t.Fatal("timeout before stub got called")
+		default:
+			if counter > 1 {
+				wg.Done()
+				return
+			}
+		}
+	}
+
+}
+
+type queuedTransactionStub func(func(queue.Transaction) error) error
 
 func (s queuedTransactionStub) QueueAdd(_ queue.Transaction) error {
 	return errors.New("not supported")
 }
-func (s queuedTransactionStub) WithQueuedTransaction(f func(queue.Transaction) error) (bool, error) {
+func (s queuedTransactionStub) WithQueuedTransaction(f func(queue.Transaction) error) error {
 	return s(f)
+}
+func (s queuedTransactionStub) IsEmpty() (bool, error) {
+	return false, nil
 }
