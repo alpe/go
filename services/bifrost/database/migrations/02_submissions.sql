@@ -13,14 +13,16 @@ ALTER TABLE transactions_queue
 CREATE TYPE SUBMISSION_TYPE AS ENUM ('submission_create_account', 'submission_send_tokens');
 
 CREATE TABLE transaction_submissions (
-  id                    BIGSERIAL,
-  transactions_queue_id BIGINT          NOT NULL REFERENCES transactions_queue (id),
-  type                  SUBMISSION_TYPE NOT NULL,
-  created_at            TIMESTAMP       NOT NULL
+  id             BIGSERIAL,
+  transaction_id VARCHAR(66)     NOT NULL,
+  asset_code     VARCHAR(10)     NOT NULL,
+  type           SUBMISSION_TYPE NOT NULL,
+  xdr            TEXT            NOT NULL,
+  created_at     TIMESTAMP       NOT NULL
 );
 
-CREATE INDEX transaction_submissions_idx_type_queue_id
-  ON transaction_submissions (transactions_queue_id, type);
+CREATE UNIQUE INDEX transaction_submissions_idx_type_queue_id
+  ON transaction_submissions (transaction_id, asset_code, type);
 
 -- +migrate Down
 

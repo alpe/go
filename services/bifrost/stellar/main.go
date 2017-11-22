@@ -15,9 +15,9 @@ const (
 )
 
 type SubmissionArchive interface {
-	Find(txID string, st SubmissionType) (string, error)
-	Store(txID string, st SubmissionType, xdr string) error
-	Delete(txID string, st SubmissionType) error
+	Find(txID, assetCode string, st SubmissionType) (string, error)
+	Store(txID, assetCode string, st SubmissionType, xdr string) error
+	Delete(txID, assetCode string, st SubmissionType) error
 }
 
 // AccountConfigurator is responsible for configuring new Stellar accounts that
@@ -31,7 +31,7 @@ type AccountConfigurator struct {
 	TokenAssetCode    string
 	OnAccountCreated  func(destination string)
 	OnAccountCredited func(destination string, assetCode string, amount string)
-	submissionArchive SubmissionArchive
+	submissionArchive SubmissionArchive `inject:""`
 
 	signerPublicKey      string
 	sequence             uint64

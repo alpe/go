@@ -49,12 +49,12 @@ func TestConfigureAccount(t *testing.T) {
 
 type devNullArchiver struct{}
 
-func (d *devNullArchiver) Find(txID string, st SubmissionType) (string, error) {
+func (d *devNullArchiver) Find(txID, assetCode string, st SubmissionType) (string, error) {
 	return "", nil
 }
-func (d *devNullArchiver) Store(txID string, st SubmissionType, xdr string) error {
+func (d *devNullArchiver) Store(txID, assetCode string, st SubmissionType, xdr string) error {
 	return nil
 }
-func (d *devNullArchiver) Delete(txID string, st SubmissionType) error {
+func (d *devNullArchiver) Delete(txID, assetCode string, st SubmissionType) error {
 	return nil
 }

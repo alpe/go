@@ -51,5 +51,7 @@ func (s *Server) processNextQueuedTransaction(parentCtx context.Context) {
 		)
 
 	})
-	s.log.WithField("err", err).Error("Error processing transactions queue")
+	if err != nil {
+		s.log.WithField("err", err).Error("Error processing transactions queue")
+	}
 }

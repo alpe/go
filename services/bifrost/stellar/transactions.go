@@ -9,7 +9,7 @@ import (
 	"github.com/stellar/go/support/log"
 )
 
-func (ac *AccountConfigurator) createAccount(transactionID, destination string) error {
+func (ac *AccountConfigurator) createAccount(transactionID, assetCode, destination string) error {
 	xdr, err := ac.buildTransaction(
 		build.CreateAccount(
 			build.SourceAccount{ac.IssuerPublicKey},
@@ -20,16 +20,10 @@ func (ac *AccountConfigurator) createAccount(transactionID, destination string) 
 	if err != nil {
 		return errors.Wrap(err, "failed to build transaction")
 	}
-	if err := ac.submissionArchive.Store(transactionID, SubmissionTypeCreateAccount, xdr); err != nil {
+	if err := ac.submissionArchive.Store(transactionID, assetCode, SubmissionTypeCreateAccount, xdr); err != nil {
 		return errors.Wrap(err, "failed to archive xdr")
 	}
-	if err = ac.submitXDR(xdr); err != nil {
-		if _, ok := err.(*horizon.Error); ok {
-			_ = ac.submissionArchive.Delete(transactionID, SubmissionTypeCreateAccount)
-		}
-		return err
-	}
-	return nil
+	return ac.submitArchivedXDR(transactionID, assetCode, SubmissionTypeCreateAccount, xdr)
 }
 
 func (ac *AccountConfigurator) allowTrust(trustor, assetCode, tokenAssetCode string) error {
@@ -71,24 +65,20 @@ func (ac *AccountConfigurator) sendToken(transactionID, destination, assetCode, 
 	if err != nil {
 		return errors.Wrap(err, "failed to build transaction")
 	}
-	if err := ac.submissionArchive.Store(transactionID, SubmissionTypeSendTokens, xdr); err != nil {
+	if err := ac.submissionArchive.Store(transactionID, assetCode, SubmissionTypeSendTokens, xdr); err != nil {
 		return errors.Wrap(err, "failed to archive xdr")
 	}
+	return ac.submitArchivedXDR(transactionID, assetCode, SubmissionTypeSendTokens, xdr)
+}
+
+func (ac *AccountConfigurator) submitArchivedXDR(transactionID, assetCode string, st SubmissionType, xdr string) error {
 	if err := ac.submitXDR(xdr); err != nil {
 		if _, ok := err.(*horizon.Error); ok {
-			_ = ac.submissionArchive.Delete(transactionID, SubmissionTypeSendTokens)
+			_ = ac.submissionArchive.Delete(transactionID, assetCode, SubmissionTypeSendTokens)
 		}
 		return err
 	}
 	return nil
-}
-
-func (ac *AccountConfigurator) submitTransaction(mutators ...build.TransactionMutator) error {
-	tx, err := ac.buildTransaction(mutators...)
-	if err != nil {
-		return errors.Wrap(err, "Error building transaction")
-	}
-	return ac.submitXDR(tx)
 }
 
 func (ac *AccountConfigurator) submitXDR(xdr string) error {
@@ -106,6 +96,14 @@ func (ac *AccountConfigurator) submitXDR(xdr string) error {
 
 	localLog.Info("Transaction successfully submitted")
 	return nil
+}
+
+func (ac *AccountConfigurator) submitTransaction(mutators ...build.TransactionMutator) error {
+	tx, err := ac.buildTransaction(mutators...)
+	if err != nil {
+		return errors.Wrap(err, "Error building transaction")
+	}
+	return ac.submitXDR(tx)
 }
 
 func (ac *AccountConfigurator) buildTransaction(mutators ...build.TransactionMutator) (string, error) {

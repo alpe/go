@@ -19,12 +19,13 @@ const (
 	bitcoinAddressIndexKey = "bitcoin_address_index"
 	bitcoinLastBlockKey    = "bitcoin_last_block"
 
-	addressAssociationTableName   = "address_association"
-	broadcastedEventTableName     = "broadcasted_event"
-	keyValueStoreTableName        = "key_value_store"
-	processedTransactionTableName = "processed_transaction"
-	transactionsQueueTableName    = "transactions_queue"
-	recoveryTransactionTableName  = "recovery_transaction"
+	addressAssociationTableName     = "address_association"
+	broadcastedEventTableName       = "broadcasted_event"
+	keyValueStoreTableName          = "key_value_store"
+	processedTransactionTableName   = "processed_transaction"
+	transactionsQueueTableName      = "transactions_queue"
+	recoveryTransactionTableName    = "recovery_transaction"
+	transactionSubmissionsTableName = "transaction_submissions"
 
 	defaultTransactionLockTTL = 2 * time.Minute
 	maxProcessingFailureCount = 15

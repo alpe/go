@@ -31,7 +31,7 @@ func (d *PostgresDatabase) QueueAdd(tx queue.Transaction) error {
 
 func (d *PostgresDatabase) IsEmpty() (bool, error) {
 	var result bool
-	err := withTx(d.session, readOnly(func(s *db.Session) error {
+	err := WithTx(d.session, ReadOnly(func(s *db.Session) error {
 		rows, err := s.Query(squirrel.Select("count(id) = 0").
 			From(transactionsQueueTableName).
 			Where("pooled = false AND (locked_until is null OR locked_until < ?)"+
@@ -53,7 +53,7 @@ func (d *PostgresDatabase) IsEmpty() (bool, error) {
 func (d *PostgresDatabase) WithQueuedTransaction(transactionHandler func(queue.Transaction) error) error {
 	var row transactionsQueueRow
 	var sessionToken string
-	err := withTx(d.session, func(s *db.Session) error {
+	err := WithTx(d.session, func(s *db.Session) error {
 		transactionsQueueTable := d.getTable(transactionsQueueTableName, s)
 		err := s.Get(&row, squirrel.Select("transaction_id, asset_code, amount, stellar_public_key, failure_count").
 			From(transactionsQueueTableName).
@@ -94,7 +94,7 @@ func (d *PostgresDatabase) WithQueuedTransaction(transactionHandler func(queue.T
 	if err := transactionHandler(transaction); err != nil {
 		if err != context.DeadlineExceeded {
 			// increase failure counter
-			_ = withTx(d.session, func(s *db.Session) error {
+			_ = WithTx(d.session, func(s *db.Session) error {
 				where := map[string]interface{}{"transaction_id": row.TransactionID, "asset_code": row.AssetCode, "locked_token": sessionToken}
 				transactionsQueueTable := d.getTable(transactionsQueueTableName, s)
 				_, err := transactionsQueueTable.Update(nil, where).Set("failure_count", row.FailureCount+1).Exec()
@@ -105,7 +105,7 @@ func (d *PostgresDatabase) WithQueuedTransaction(transactionHandler func(queue.T
 	}
 
 	// update pooled status
-	err = withTx(d.session, func(s *db.Session) error {
+	err = WithTx(d.session, func(s *db.Session) error {
 		where := map[string]interface{}{"transaction_id": row.TransactionID, "asset_code": row.AssetCode, "locked_token": sessionToken}
 		transactionsQueueTable := d.getTable(transactionsQueueTableName, s)
 		_, err := transactionsQueueTable.Update(nil, where).Set("pooled", true).Exec()
@@ -118,7 +118,7 @@ func (d *PostgresDatabase) WithQueuedTransaction(transactionHandler func(queue.T
 }
 
 func (d *PostgresDatabase) releaseTransactionLock(transactionID string, sessionToken string) error {
-	return withTx(d.session, func(s *db.Session) error {
+	return WithTx(d.session, func(s *db.Session) error {
 		transactionsQueueTable := d.getTable(transactionsQueueTableName, s)
 		where := map[string]interface{}{"transaction_id": transactionID, "locked_token": sessionToken}
 		_, err := transactionsQueueTable.Update(nil, where).
@@ -136,36 +136,4 @@ func newToken() (string, error) {
 		return "", err
 	}
 	return fmt.Sprintf("%X", raw), nil
-}
-
-var errRollbackTrigger = errors.New("rollback trigger")
-
-func withTx(session *db.Session, f func(s *db.Session) error) error {
-	newSession := session.Clone()
-	if err := newSession.Begin(); err != nil {
-		return errors.Wrap(err, "failed to start db transaction")
-	}
-	defer newSession.Rollback()
-
-	if err := f(newSession); err != nil {
-		// is reserved  error for flow control
-		if err == errRollbackTrigger {
-			return nil
-		}
-		return err
-	}
-	return newSession.Commit()
-}
-
-func readOnly(f func(s *db.Session) error) func(s *db.Session) error {
-	return func(s *db.Session) error {
-		if _, err := s.ExecRaw("SET transaction READ ONLY"); err != nil {
-			return err
-		}
-		if err := f(s); err != nil {
-			return err
-		}
-		return errRollbackTrigger
-	}
-
 }

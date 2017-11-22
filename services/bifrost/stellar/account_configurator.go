@@ -95,16 +95,16 @@ func (ac *AccountConfigurator) ConfigureAccount(ctx context.Context, transaction
 
 	if !destAccountExists {
 		localLog.WithField("destination", destination).Info("Creating Stellar account")
-		xdr, err := ac.submissionArchive.Find(transactionID, SubmissionTypeCreateAccount)
+		xdr, err := ac.submissionArchive.Find(transactionID, assetCode, SubmissionTypeCreateAccount)
 		switch {
 		case err != nil:
 			return errors.Wrap(err, "failed to find persisted submission")
 		case err == nil && xdr != "":
-			if err := ac.submitXDR(xdr); err != nil {
+			if err := ac.submitArchivedXDR(transactionID, assetCode, SubmissionTypeCreateAccount, xdr); err != nil {
 				return err
 			}
 		default:
-			if err := ac.createAccount(transactionID, destination); err != nil {
+			if err := ac.createAccount(transactionID, assetCode, destination); err != nil {
 				return errors.Wrap(err, "failed to create Stellar account")
 			}
 		}
@@ -150,14 +150,14 @@ func (ac *AccountConfigurator) ConfigureAccount(ctx context.Context, transaction
 	}
 
 	localLog.Info("Sending token")
-	xdr, err := ac.submissionArchive.Find(transactionID, SubmissionTypeSendTokens)
+	xdr, err := ac.submissionArchive.Find(transactionID, assetCode, SubmissionTypeSendTokens)
 	switch {
 	case err != nil:
 		return errors.Wrap(err, "failed to find persisted submission")
 	case ctx.Err() != nil:
 		return ctx.Err()
 	case err == nil && xdr != "":
-		if err := ac.submitXDR(xdr); err != nil {
+		if err := ac.submitArchivedXDR(transactionID, assetCode, SubmissionTypeSendTokens, xdr); err != nil {
 			return err
 		}
 	default:
