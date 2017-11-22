@@ -13,7 +13,10 @@ import (
 	"github.com/stellar/go/support/errors"
 )
 
-var _ queue.Queue = &PostgresDatabase{}
+var (
+	_                         queue.Queue = &PostgresDatabase{}
+	DefaultTransactionLockTTL             = 2 * time.Minute
+)
 
 // QueueAdd implements queue.Queue interface. If element already exists in a queue, it should
 // return nil.
@@ -29,6 +32,7 @@ func (d *PostgresDatabase) QueueAdd(tx queue.Transaction) error {
 	return err
 }
 
+// IsEmpty returns a snapshot status of the queue.
 func (d *PostgresDatabase) IsEmpty() (bool, error) {
 	var result bool
 	err := WithTx(d.session, ReadOnly(func(s *db.Session) error {
@@ -54,7 +58,6 @@ func (d *PostgresDatabase) WithQueuedTransaction(transactionHandler func(queue.T
 	var row transactionsQueueRow
 	var sessionToken string
 	err := WithTx(d.session, func(s *db.Session) error {
-		transactionsQueueTable := d.getTable(transactionsQueueTableName, s)
 		err := s.Get(&row, squirrel.Select("transaction_id, asset_code, amount, stellar_public_key, failure_count").
 			From(transactionsQueueTableName).
 			Where("pooled = false AND (locked_until is null OR locked_until < ?)"+
@@ -74,9 +77,10 @@ func (d *PostgresDatabase) WithQueuedTransaction(transactionHandler func(queue.T
 		if err != nil {
 			return errors.Wrap(err, "failed to create session token")
 		}
+		transactionsQueueTable := d.getTable(transactionsQueueTableName, s)
 		where := map[string]interface{}{"transaction_id": row.TransactionID, "asset_code": row.AssetCode}
 		_, err = transactionsQueueTable.Update(nil, where).
-			Set("locked_until", time.Now().Add(defaultTransactionLockTTL)).
+			Set("locked_until", time.Now().Add(DefaultTransactionLockTTL)).
 			Set("locked_token", sessionToken).
 			Exec()
 		return err

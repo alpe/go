@@ -50,7 +50,7 @@ func (ac *AccountConfigurator) allowTrust(trustor, assetCode, tokenAssetCode str
 	return nil
 }
 
-func (ac *AccountConfigurator) sendToken(transactionID, destination, assetCode, amount string) error {
+func (ac *AccountConfigurator) sendToken(transactionID, assetCode, destination, amount string) error {
 	xdr, err := ac.buildTransaction(
 		build.Payment(
 			build.SourceAccount{ac.IssuerPublicKey},
@@ -73,7 +73,7 @@ func (ac *AccountConfigurator) sendToken(transactionID, destination, assetCode, 
 
 func (ac *AccountConfigurator) submitArchivedXDR(transactionID, assetCode string, st SubmissionType, xdr string) error {
 	if err := ac.submitXDR(xdr); err != nil {
-		if _, ok := err.(*horizon.Error); ok {
+		if _, ok := errors.Cause(err).(*horizon.Error); ok {
 			_ = ac.submissionArchive.Delete(transactionID, assetCode, SubmissionTypeSendTokens)
 		}
 		return err
