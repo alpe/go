@@ -24,8 +24,9 @@ type Config struct {
 		SignerSecretKey string `valid:"required" toml:"signer_secret_key"`
 	} `valid:"required" toml:"stellar"`
 	Database struct {
-		Type string `valid:"matches(^postgres$)"`
-		DSN  string `valid:"required"`
+		Type              string `valid:"matches(^postgres$)"`
+		DSN               string `valid:"required"`
+		MigrationFilePath string `valid:"optional"`
 	} `valid:"required"`
 }
 

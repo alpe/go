@@ -8,7 +8,6 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
-	"github.com/rubenv/sql-migrate"
 	"github.com/stretchr/testify/require"
 )
 
@@ -29,10 +28,7 @@ func OpenTestDB(t *testing.T) *sqlx.DB {
 
 func migrateSchema(t *testing.T, db *sql.DB) func() {
 	return func() {
-		migrations := &migrate.FileMigrationSource{
-			Dir: "./migrations",
-		}
-		_, err := migrate.Exec(db, "postgres", migrations, migrate.Up)
+		err := RunMigrations(db, "postgres", "./migrations")
 		require.NoError(t, err)
 	}
 }

@@ -4,6 +4,7 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"net/http"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/facebookgo/inject"
+	_ "github.com/lib/pq"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/stellar/go/clients/horizon"
@@ -53,6 +55,39 @@ var serverCmd = &cobra.Command{
 		err := server.Start()
 		if err != nil {
 			log.WithField("err", err).Error("Error starting the server")
+			os.Exit(-1)
+		}
+	},
+}
+
+var migrateDBCmd = &cobra.Command{
+	Use:   "migrate-db",
+	Short: "Start database migrations",
+	Run: func(cmd *cobra.Command, args []string) {
+		var (
+			cfgPath   = rootCmd.PersistentFlags().Lookup("config").Value.String()
+			debugMode = rootCmd.PersistentFlags().Lookup("debug").Changed
+		)
+
+		if debugMode {
+			log.SetLevel(log.DebugLevel)
+			log.Debug("Debug mode ON")
+		}
+
+		dbCfg := readConfig(cfgPath).Database
+		if dbCfg.MigrationFilePath == "" {
+			log.Error("migration file path is required")
+			os.Exit(-1)
+		}
+
+		db, err := sql.Open(dbCfg.Type, dbCfg.DSN)
+		if err != nil {
+			log.WithField("err", err).Error("failed to connect to database")
+			os.Exit(-1)
+		}
+		err = database.RunMigrations(db, dbCfg.Type, dbCfg.MigrationFilePath)
+		if err != nil {
+			log.WithField("err", err).Error("failed to execute migrations")
 			os.Exit(-1)
 		}
 	},
@@ -227,6 +262,7 @@ func init() {
 	rootCmd.AddCommand(serverCmd)
 	rootCmd.AddCommand(stressTestCmd)
 	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(migrateDBCmd)
 
 	stressTestCmd.PersistentFlags().IntP("users-per-second", "u", 2, "users per second")
 
