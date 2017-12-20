@@ -10,7 +10,7 @@ import (
 
 var (
 	processingTimeout      = database.DefaultTransactionLockTTL - 5*time.Second
-	defaultQueueRetryDelay = time.Second
+	defaultQueueRetryDelay = 10 * time.Second
 )
 
 // poolTransactionsQueue pools transactions queue which contains only processed and

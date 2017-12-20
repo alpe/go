@@ -6,8 +6,10 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/btcsuite/btcd/chaincfg"
@@ -278,9 +280,12 @@ func main() {
 }
 
 func readConfig(cfgPath string) config.Config {
-	var cfg config.Config
-
-	err := supportConfig.Read(cfgPath, &cfg)
+	raw, err := ioutil.ReadFile(cfgPath)
+	if err != nil {
+		log.Errorf("failed to read config file: %s", err)
+		os.Exit(-1)
+	}
+	cfg, err := config.Parse(os.ExpandEnv(string(raw)))
 	if err != nil {
 		switch cause := errors.Cause(err).(type) {
 		case *supportConfig.InvalidConfigError:
@@ -307,6 +312,21 @@ func createDatabase(dsn string) (*database.PostgresDatabase, error) {
 }
 
 func createServer(cfg config.Config, stressTest bool) *server.Server {
+	if cfg.LogLevel != "" {
+		levels := map[string]logrus.Level{
+			"debug": log.DebugLevel,
+			"info":  log.InfoLevel,
+			"warn":  log.WarnLevel,
+			"error": log.ErrorLevel,
+		}
+		newLevel, ok := levels[strings.ToLower(cfg.LogLevel)]
+		if !ok {
+			log.WithField("value", cfg.LogLevel).Error("unsupported log level")
+			os.Exit(-1)
+		}
+		log.SetLevel(newLevel)
+	}
+
 	var g inject.Graph
 
 	db, err := createDatabase(cfg.Database.DSN)

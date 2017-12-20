@@ -1,7 +1,7 @@
 # Bifrost
- 
- 
+
 ## Build docker artifact
+Build in projet root: `$GOPATH/src/github.com/stellar/go`
 
 * Build static binary
 ```bash
@@ -16,7 +16,7 @@ docker tag mybifrost $DOCKER_ID_USER/mybifrost
 docker push $DOCKER_ID_USER/mybifrost
 ```
 
-TODO: upgrade build container
+TODO: upgrade Go [build container](https://github.com/alpe/golang-builder)
 ```bash
 docker run --rm \
   --env SKIP_TESTS=yes \
