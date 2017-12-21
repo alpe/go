@@ -6,7 +6,8 @@ Build in projet root: `$GOPATH/src/github.com/stellar/go`
 * Build static binary
 ```bash
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -tags netgo -tags nocgo -ldflags '-extldflags "-static"' \
-         github.com/stellar/go/services/bifrost/cmd/bifrost
+    -o $(pwd)/services/bifrost/cmd/bifrost/bifrost \
+     github.com/stellar/go/services/bifrost/cmd/bifrost
 ```
 * Build docker
 ```bash

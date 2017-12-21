@@ -124,6 +124,7 @@ func (s *Server) startHTTPServer() {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Recoverer)
 	r.Use(s.loggerMiddleware)
+	r.Get("/healthz", s.handlerHealthCheck)
 	r.Get("/events", s.HandlerEvents)
 	r.Post("/generate-bitcoin-address", s.HandlerGenerateBitcoinAddress)
 	r.Post("/generate-ethereum-address", s.HandlerGenerateEthereumAddress)
@@ -208,6 +209,11 @@ func (s *Server) HandlerEvents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.SSEServer.HTTPHandler(w, r)
+}
+
+// handlerHealthCheck returns 200 for any external load balancer that the server is up and ready.
+func (s *Server) handlerHealthCheck(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
 }
 
 func (s *Server) HandlerGenerateBitcoinAddress(w http.ResponseWriter, r *http.Request) {
