@@ -1,6 +1,13 @@
 package config
 
+import (
+	"os"
+
+	supportConfig "github.com/stellar/go/support/config"
+)
+
 type Config struct {
+	LogLevel                       string          `valid:"optional" toml:"log_level"`
 	Port                           int             `valid:"required"`
 	UsingProxy                     bool            `valid:"optional" toml:"using_proxy"`
 	Bitcoin                        *bitcoinConfig  `valid:"optional" toml:"bitcoin"`
@@ -24,8 +31,9 @@ type Config struct {
 		SignerSecretKey string `valid:"required" toml:"signer_secret_key"`
 	} `valid:"required" toml:"stellar"`
 	Database struct {
-		Type string `valid:"matches(^postgres$)"`
-		DSN  string `valid:"required"`
+		Type              string `valid:"matches(^postgres$)"`
+		DSN               string `valid:"required"`
+		MigrationFilePath string `valid:"optional"`
 	} `valid:"required"`
 }
 
@@ -49,4 +57,11 @@ type ethereumConfig struct {
 	MinimumValueEth string `valid:"required" toml:"minimum_value_eth"`
 	// Host only
 	RpcServer string `valid:"required" toml:"rpc_server"`
+}
+
+// Parse expands given content with environment variables when used
+// and returns an initialized config object.
+func Parse(content string) (Config, error) {
+	var dest Config
+	return dest, supportConfig.Decode(os.ExpandEnv(content), &dest)
 }

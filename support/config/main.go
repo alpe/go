@@ -28,6 +28,10 @@ func Read(path string, dest interface{}) error {
 	return decode(string(bs), dest)
 }
 
+func Decode(content string, dest interface{}) error {
+	return decode(content, dest)
+}
+
 func decode(content string, dest interface{}) error {
 	metadata, err := toml.Decode(content, dest)
 	if err != nil {
